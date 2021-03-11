@@ -26,7 +26,7 @@ import re
 from twisted.internet import reactor, defer
 from twisted.names import client, dns, error, server
 from twisted.python import log
-from pyroute2 import IPRoute,netlink
+from pyroute2 import IPRoute,netlink,IPSet
 log.startLogging(sys.stdout)
 log.msg('Started logger for custom DNS server')
 import socket 
@@ -53,7 +53,7 @@ class DynamicResolver(object):
         log.msg("Dynamic Resolver patterns ", "|".join(self.trappatterns) )
         jstring = "|".join(self.trappatterns)
         jstring = jstring.replace('"','')
-        print jstring
+        print(jstring)
         #self.recomp = re.compile("|".join(self.trappatterns))
         self.recomp = re.compile(jstring,re.IGNORECASE|re.VERBOSE|re.MULTILINE)
         #self.recomp = re.compile(jstring,re.VERBOSE | re.MULTILINE | re.IGNORECASE)
@@ -63,8 +63,8 @@ class DynamicResolver(object):
         """
         Check the query to determine if a dynamic response is required.
         """
-        queryname = query.name.name
-        labels = query.name.name.split('.')
+        queryname = str(query.name)
+        labels = queryname.split('.')
         log.msg('Query before match ' + queryname)
         log.msg('Query type is ',  query.type)
 
@@ -85,27 +85,33 @@ class DynamicResolver(object):
 #         return True
 #==============================================================================
     def _addRoutes(self,ipaddress):
-        log.msg("Adding route for ",ipaddress," using gw ",self._gw," and device ",self._dev)
-        ip = IPRoute()
-        devno = ip.link_lookup(ifname=self._dev)
-        log.msg("Adding route for ",ipaddress," using gw ",self._gw," and device ",self._dev, "with dev no: ",devno)
-        #ip.route("add", dst=ipaddress,mask=32,gateway=self._gw,oif=devno)
+        log.msg("Adding ip ",ipaddress," to ipset allowed-routes")
+        ip = IPSet()
         try:
-          ip.route("add", dst=ipaddress,mask=32,gateway=self._gw,oifname=self._dev)
+            ip.add("allowed-routes", ipaddress, etype="ip")
         except netlink.NetlinkError as E:
-          log.msg("Routing exception: ", E)
+            log.msg("IPSet exception: ", E)
+        #log.msg("Adding host to ipset ",ipaddress," using gw ",self._gw," and device ",self._dev)
+        #ip = IPRoute()
+        #devno = ip.link_lookup(ifname=self._dev)
+        #log.msg("Adding route for ",ipaddress," using gw ",self._gw," and device ",self._dev, "with dev no: ",devno)
+        #ip.route("add", dst=ipaddress,mask=32,gateway=self._gw,oif=devno)
+        #try:
+         # ip.route("add", dst=ipaddress,mask=32,gateway=self._gw,oifname=self._dev)
+        #except netlink.NetlinkError as E:
+        #  log.msg("Routing exception: ", E)
 #netlink.NetlinkError
         
         
         
     def _doFormatResults(self,records,flags):
         answers, authority, additional = records
-        print "printing something"
-        print "records"
-        print records
-        print answers
-        print authority
-        print additional
+        print ("printing something")
+        print ("records")
+        print (records)
+        print (answers)
+        print (authority)
+        print (additional)
 
             
 #        print answers.paylod
@@ -117,7 +123,7 @@ class DynamicResolver(object):
                 log.msg("working on ", a.name, " flag is set for this guy and is of type A")
             #    self._flag = False
                 log.msg("dns query ", dns.QUERY_CLASSES.get(a.cls, 'UNKNOWN (%d)' % (a.cls,)))
-                print socket.inet_ntop(socket.AF_INET, a.payload.address)
+                print(socket.inet_ntop(socket.AF_INET, a.payload.address))
                 IPAddress = socket.inet_ntop(socket.AF_INET, a.payload.address)
                 log.msg("This ip address needs to be routed dynamically ",IPAddress)
                 self._addRoutes(IPAddress)
@@ -126,7 +132,7 @@ class DynamicResolver(object):
                 #self._flag = True
             #lines.append(' '.join(str(word) for word in line))
             
-        print "done boss"
+        print("done boss")
         self._answers = answers
         self._authority = authority
         self._additional = additional
@@ -137,12 +143,14 @@ class DynamicResolver(object):
         
 
 
-    def _doDynamicResponse(self, query,flags):
+    def _doDynamicResponse(self, query, flags):
         """
         Calculate the response to a query.
         """
-        name = query.name.name
+        name = str(query.name)
         labels = name.split('.')
+        print("Labels:")
+        print(labels)
 #        lastOctet = int(parts[1])
         r = client.Resolver(self._resolvconf)
         log.msg("Looking up A record in dynamic Response for ",name)
@@ -161,10 +169,10 @@ class DynamicResolver(object):
         authority = self._authority
         additional = self._additional
         self._answers = self._authority = self._additional = ''
-        print "returning answers, authority and additional"
-        print answers
-        print authority
-        print additional
+        print ("returning answers, authority and additional")
+        print (answers)
+        print (authority)
+        print (additional)
         return answers, authority, additional
 
 
@@ -181,7 +189,10 @@ class DynamicResolver(object):
      #       return defer.succeed(self._doDynamicResponse(query))        
             return defer.fail(error.DomainError())
 
-
+    
+    
+    def lookupAllRecords(self, query, timeout=None):
+                return defer.succeed(self._doDynamicResponse(query,True))
 
 def main():
     """
@@ -221,7 +232,7 @@ def main():
     log.msg("Gateway is ", customgw)
     log.msg("resolvconf is ", resolvconf)
     if options.verbose:
-        print header
+        print(header)
         
     if options.file:
         log.msg("Config file is provided ", options.file)
@@ -252,5 +263,3 @@ def main():
 
 if __name__ == '__main__':
     raise SystemExit(main())
-
-
